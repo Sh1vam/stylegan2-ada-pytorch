@@ -88,7 +88,8 @@ def save_image_grid(img, fname, drange, grid_size):
 def training_loop(
     run_dir                 = '.',      # Output directory.
     training_set_kwargs     = {},       # Options for training set.
-    data_loader_kwargs      = {},       # Options for torch.utils.data.DataLoader.
+    
+    = {},       # Options for torch.utils.data.DataLoader.
     G_kwargs                = {},       # Options for generator network.
     D_kwargs                = {},       # Options for discriminator network.
     G_opt_kwargs            = {},       # Options for generator optimizer.
@@ -136,7 +137,7 @@ def training_loop(
         print('Loading training set...')
     training_set = dnnlib.util.construct_class_by_name(**training_set_kwargs) # subclass of training.dataset.Dataset
     training_set_sampler = misc.InfiniteSampler(dataset=training_set, rank=rank, num_replicas=num_gpus, seed=random_seed)
-    training_set_iterator = iter(torch.utils.data.DataLoader(dataset=training_set, sampler=training_set_sampler, batch_size=batch_size//num_gpus, **data_loader_kwargs))
+    training_set_iterator = iter(torch.utils.data.DataLoader(dataset=training_set, sampler=training_set_sampler, batch_size=batch_size//num_gpus, persistent_workers=False, **data_loader_kwargs))
     if rank == 0:
         print()
         print('Num images: ', len(training_set))
@@ -267,7 +268,8 @@ def training_loop(
             all_gen_z = torch.randn([len(phases) * batch_size, G.z_dim], device=device)
             all_gen_z = [phase_gen_z.split(batch_gpu) for phase_gen_z in all_gen_z.split(batch_size)]
             all_gen_c = [training_set.get_label(np.random.randint(len(training_set))) for _ in range(len(phases) * batch_size)]
-            all_gen_c = torch.from_numpy(np.stack(all_gen_c)).pin_memory().to(device)
+            #all_gen_c = torch.from_numpy(np.stack(all_gen_c)).pin_memory().to(device)
+            all_gen_c = torch.from_numpy(np.stack(all_gen_c)).to(device)
             all_gen_c = [phase_gen_c.split(batch_gpu) for phase_gen_c in all_gen_c.split(batch_size)]
 
         # Execute training phases.
