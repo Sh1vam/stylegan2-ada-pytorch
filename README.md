@@ -413,17 +413,20 @@ This is a research reference implementation and is treated as a one-time code dr
 
 We thank David Luebke for helpful comments; Tero Kuosmanen and Sabu Nadarajan for their support with compute infrastructure; and Edgar Sch&ouml;nfeld for guidance on setting up unconditional BigGAN.
 
-Environment changes
-'''
-env = os.environ.copy()
-env['PYTORCH_JIT'] = '0'
-env['CUDA_VISIBLE_DEVICES'] = '0'
-env['TORCH_EXTENSIONS_DIR'] = '/tmp/torch_ext'
-env['OMP_NUM_THREADS'] = '1'
 
-ret = subprocess.run(cmd, env=env, 
-                     stdout=subprocess.PIPE, 
-                     stderr=subprocess.STDOUT, 
-                     text=True, 
-                     cwd='stylegan2-ada-pytorch')
-'''
+## Environment
+
+
+```
+    env = os.environ.copy()
+    env['PYTORCH_JIT'] = '0'
+    env['CUDA_VISIBLE_DEVICES'] = '0'
+    env['TORCH_EXTENSIONS_DIR'] = '/tmp/torch_ext'
+    env['OMP_NUM_THREADS'] = '1'
+    
+    ret = subprocess.run(cmd, env=env, 
+                         stdout=subprocess.PIPE, 
+                         stderr=subprocess.STDOUT, 
+                         text=True, 
+                         cwd='stylegan2-ada-pytorch')
+```
