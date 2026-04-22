@@ -423,7 +423,8 @@ We thank David Luebke for helpful comments; Tero Kuosmanen and Sabu Nadarajan fo
     env['CUDA_VISIBLE_DEVICES'] = '0'
     env['TORCH_EXTENSIONS_DIR'] = '/tmp/torch_ext'
     env['OMP_NUM_THREADS'] = '1'
-    
+    env['MKL_NUM_THREADS'] = '1' 
+    env['PYTORCH_NO_CUDA_MEMORY_CACHING'] = '1' 
     ret = subprocess.run(cmd, env=env, 
                          stdout=subprocess.PIPE, 
                          stderr=subprocess.STDOUT, 
