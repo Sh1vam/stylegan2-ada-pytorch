@@ -392,13 +392,8 @@ def setup_training_loop_kwargs(
 
     if workers is not None:
         assert isinstance(workers, int)
-        try:
-            '''if not workers >= 1:
-                pass'''
-            if workers<0:
-                raise UserError('--workers must be at least 0')
-        except:
-                pass
+        if not workers >= 1:
+                raise UserError('--workers must be at least 1') 
         args.data_loader_kwargs.num_workers = workers
         if workers == 0:
             args.data_loader_kwargs.prefetch_factor = None  # ← add this
