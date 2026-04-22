@@ -110,7 +110,8 @@ def setup_training_loop_kwargs(
     assert data is not None
     assert isinstance(data, str)
     args.training_set_kwargs = dnnlib.EasyDict(class_name='training.dataset.ImageFolderDataset', path=data, use_labels=True, max_size=None, xflip=False)
-    args.data_loader_kwargs = dnnlib.EasyDict(pin_memory=True, num_workers=3, prefetch_factor=2)
+    args.data_loader_kwargs = dnnlib.EasyDict(pin_memory=False, num_workers=1, prefetch_factor=2)
+    #args.data_loader_kwargs = dnnlib.EasyDict(pin_memory=True, num_workers=3, prefetch_factor=2)
     try:
         training_set = dnnlib.util.construct_class_by_name(**args.training_set_kwargs) # subclass of training.dataset.Dataset
         args.training_set_kwargs.resolution = training_set.resolution # be explicit about resolution
@@ -392,14 +393,15 @@ def setup_training_loop_kwargs(
     if workers is not None:
         assert isinstance(workers, int)
         try:
-            if not workers >= 1:
-                pass
-                #raise UserError('--workers must be at least 1')
-        except:
+            '''if not workers >= 1:
+                pass'''
             if workers<0:
                 raise UserError('--workers must be at least 0')
-                
+        except:
+                pass
         args.data_loader_kwargs.num_workers = workers
+        if workers == 0:
+            args.data_loader_kwargs.prefetch_factor = None  # ← add this
 
     return desc, args
 
@@ -575,7 +577,7 @@ def main(ctx, outdir, dry_run, **config_kwargs):
 
     # Launch processes.
     print('Launching processes...')
-    torch.multiprocessing.set_start_method('spawn')
+    torch.multiprocessing.set_start_method('spawn',force=True)
     with tempfile.TemporaryDirectory() as temp_dir:
         if args.num_gpus == 1:
             subprocess_fn(rank=0, args=args, temp_dir=temp_dir)
