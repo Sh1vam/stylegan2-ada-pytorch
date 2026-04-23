@@ -11,8 +11,8 @@ supports arbitrarily high order gradients between the input and output.
 Only works on 2D images and assumes
 `mode='bilinear'`, `padding_mode='zeros'`, `align_corners=False`."""
 
+import re
 import torch
-from pkg_resources import parse_version
 
 # pylint: disable=redefined-builtin
 # pylint: disable=arguments-differ
@@ -20,9 +20,16 @@ from pkg_resources import parse_version
 
 #----------------------------------------------------------------------------
 
+def _parse_version(version_str):
+    """Parse a version string into a comparable tuple, ignoring pre-release suffixes."""
+    nums = re.findall(r'\d+', version_str.split('+')[0])
+    return tuple(int(x) for x in nums[:3])
+
+#----------------------------------------------------------------------------
+
 enabled = False  # Enable the custom op by setting this to true.
-_use_pytorch_1_11_api = parse_version(torch.__version__) >= parse_version('1.11.0a') # Allow prerelease builds of 1.11
-_use_pytorch_1_12_api = parse_version(torch.__version__) >= parse_version('1.12.0a') # Allow prerelease builds of 1.12
+_use_pytorch_1_11_api = _parse_version(torch.__version__) >= (1, 11, 0) # Allow prerelease builds of 1.11
+_use_pytorch_1_12_api = _parse_version(torch.__version__) >= (1, 12, 0) # Allow prerelease builds of 1.12
 
 #----------------------------------------------------------------------------
 

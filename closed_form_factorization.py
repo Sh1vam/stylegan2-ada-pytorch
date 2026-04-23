@@ -21,7 +21,9 @@ if __name__ == "__main__":
     G_kwargs.scale_type = 'pad'
     
     print('Loading networks from "%s"...' % args.ckpt)
-    device = torch.device('cuda')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if not torch.cuda.is_available():
+        print('Warning: CUDA not available, falling back to CPU.')
     with dnnlib.util.open_url(args.ckpt) as f:
         G = legacy.load_network_pkl(f, custom=custom, **G_kwargs)['G_ema'].to(device) # type: ignore
 

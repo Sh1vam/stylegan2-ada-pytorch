@@ -26,8 +26,9 @@ import torch.nn.functional as F
 import dnnlib
 import legacy
 
-image_mean = torch.tensor([0.48145466, 0.4578275, 0.40821073]).cuda()
-image_std = torch.tensor([0.26862954, 0.26130258, 0.27577711]).cuda()
+# Defer device placement; move to the right device when first used
+image_mean = torch.tensor([0.48145466, 0.4578275, 0.40821073])
+image_std = torch.tensor([0.26862954, 0.26130258, 0.27577711])
 
 def score_images(G, model, text, latents, device, label_class = 0, batch_size = 8):
   scores = []
@@ -38,8 +39,8 @@ def score_images(G, model, text, latents, device, label_class = 0, batch_size = 
         image_input = (torch.clamp(images, -1, 1) + 1) * 0.5
         image_input = F.interpolate(image_input, size=(256, 256), mode='area')
         image_input = image_input[:, :, 16:240, 16:240] # 256 -> 224, center crop
-        image_input -= image_mean[None, :, None, None]
-        image_input /= image_std[None, :, None, None]
+        image_input -= image_mean[None, :, None, None].to(device)
+        image_input /= image_std[None, :, None, None].to(device)
         score = model(image_input, text)[0]
         scores.append(score.cpu().numpy())
         all_images.append(images.cpu().numpy())
@@ -156,9 +157,9 @@ def project(
     if use_clip:
         if target_image is not None:
             with torch.no_grad():
-                clip_target_features = model.encode_image(((target_images / 255.0) - image_mean[None, :, None, None]) / image_std[None, :, None, None]).float()
+                clip_target_features = model.encode_image(((target_images / 255.0) - image_mean[None, :, None, None].to(device)) / image_std[None, :, None, None].to(device)).float()
                 if use_center:
-                    clip_target_center = model.encode_image(((center_target / 255.0) - image_mean[None, :, None, None]) / image_std[None, :, None, None]).float()
+                    clip_target_center = model.encode_image(((center_target / 255.0) - image_mean[None, :, None, None].to(device)) / image_std[None, :, None, None].to(device)).float()
 
     if kmeans_latents is not None and use_clip and target_text is not None:
         scores, kmeans_images = score_images(G, model, target_text, kmeans_latents.repeat([1, G.mapping.num_ws, 1]), device=device)
@@ -213,12 +214,12 @@ def project(
             dist += F.relu(vgg_dist*vgg_dist - min_threshold)
 
         if use_clip:
-            clip_synth_image = ((synth_images / 255.0) - image_mean[None, :, None, None]) / image_std[None, :, None, None]
+            clip_synth_image = ((synth_images / 255.0) - image_mean[None, :, None, None].to(device)) / image_std[None, :, None, None].to(device)
             clip_synth_features = model.encode_image(clip_synth_image).float()
             adj_center = 2.0
 
             if use_center:
-                clip_cynth_center_image = ((center_synth / 255.0) - image_mean[None, :, None, None]) / image_std[None, :, None, None]
+                clip_cynth_center_image = ((center_synth / 255.0) - image_mean[None, :, None, None].to(device)) / image_std[None, :, None, None].to(device)
                 adj_center = 1.0
                 clip_synth_center = model.encode_image(clip_cynth_center_image).float()
 
@@ -294,6 +295,7 @@ def project(
 @click.option('--use-penalty',            help='Use a penalty on latent values distance from the mean in the loss', type=bool, default=True, show_default=True)
 @click.option('--use-center',            help='Optimize against an additional center image crop', type=bool, default=True, show_default=True)
 @click.option('--use-kmeans',            help='Perform kmeans clustering for selecting initial latents', type=bool, default=True, show_default=True)
+@click.option('--cpu',                    help='Force CPU even if CUDA is available', type=bool, default=False, show_default=True)
 def run_projection(
     network_pkl: str,
     target_fname: str,
@@ -310,6 +312,7 @@ def run_projection(
     use_penalty: bool,
     use_center: bool,
     use_kmeans: bool,
+    cpu: bool = False,
 ):
     """Project given image to the latent space of pretrained network pickle.
 
@@ -324,7 +327,12 @@ def run_projection(
 
     # Load networks.
     print('Loading networks from "%s"...' % network_pkl)
-    device = torch.device('cuda')
+    if cpu:
+        device = torch.device('cpu')
+    else:
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        if not torch.cuda.is_available():
+            print('Warning: CUDA not available, falling back to CPU.')
     with dnnlib.util.open_url(network_pkl) as fp:
         G = legacy.load_network_pkl(fp)['G_ema'].requires_grad_(False).to(device) # type: ignore
 

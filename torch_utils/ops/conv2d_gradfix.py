@@ -10,8 +10,8 @@
 arbitrarily high order gradients with zero performance penalty."""
 
 import contextlib
+import re
 import torch
-from pkg_resources import parse_version
 
 # pylint: disable=redefined-builtin
 # pylint: disable=arguments-differ
@@ -19,9 +19,16 @@ from pkg_resources import parse_version
 
 #----------------------------------------------------------------------------
 
+def _parse_version(version_str):
+    """Parse a version string into a comparable tuple, ignoring pre-release suffixes."""
+    nums = re.findall(r'\d+', version_str.split('+')[0])
+    return tuple(int(x) for x in nums[:3])
+
+#----------------------------------------------------------------------------
+
 enabled = False                     # Enable the custom op by setting this to true.
 weight_gradients_disabled = False   # Forcefully disable computation of gradients with respect to the weights.
-_use_pytorch_1_11_api = parse_version(torch.__version__) >= parse_version('1.11.0a') # Allow prerelease builds of 1.11
+_use_pytorch_1_11_api = _parse_version(torch.__version__) >= (1, 11, 0) # Allow prerelease builds of 1.11
 
 @contextlib.contextmanager
 def no_weight_gradients(disable=True):

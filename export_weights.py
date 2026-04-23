@@ -35,8 +35,8 @@ def determine_config(state_nv):
     mapping_names = [name for name in state_nv.keys() if "mapping.fc" in name]
     sythesis_names = [name for name in state_nv.keys() if "synthesis.b" in name]
 
-    n_mapping =  max([int(re.findall("(\d+)", n)[0]) for n in mapping_names]) + 1
-    resolution =  max([int(re.findall("(\d+)", n)[0]) for n in sythesis_names])
+    n_mapping =  max([int(re.findall(r"(\d+)", n)[0]) for n in mapping_names]) + 1
+    resolution =  max([int(re.findall(r"(\d+)", n)[0]) for n in sythesis_names])
     n_layers = np.log(resolution/2)/np.log(2)
 
     return n_mapping, n_layers

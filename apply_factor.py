@@ -34,7 +34,7 @@ Change output directory by using --output.
 
 def generate_images(z, label, truncation_psi, noise_mode, direction, file_name):
     if(args.space == 'w'):
-        ws = zs_to_ws(G,torch.device('cuda'),label,truncation_psi,[z,z + direction,z - direction])
+        ws = zs_to_ws(G, z.device, label, truncation_psi, [z, z + direction, z - direction])
         img1 = G.synthesis(ws[0], noise_mode=noise_mode, force_fp32=True)
         img2 = G.synthesis(ws[1], noise_mode=noise_mode, force_fp32=True)
         img3 = G.synthesis(ws[2], noise_mode=noise_mode, force_fp32=True)
@@ -108,7 +108,9 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    device = torch.device('cuda')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if not torch.cuda.is_available():
+        print('Warning: CUDA not available, falling back to CPU.')
     eigvec = torch.load(args.factor)["eigvec"].to(device)
     index = args.index
     seeds = args.seeds
@@ -120,7 +122,6 @@ if __name__ == "__main__":
     G_kwargs.scale_type = 'symm'
     
     print('Loading networks from "%s"...' % args.ckpt)
-    device = torch.device('cuda')
     with dnnlib.util.open_url(args.ckpt) as f:
         G = legacy.load_network_pkl(f, custom=custom, **G_kwargs)['G_ema'].to(device) # type: ignore
 

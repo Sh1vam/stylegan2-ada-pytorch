@@ -162,11 +162,12 @@ def run_projection(
 
     # Load networks.
     print('Loading networks from "%s"...' % network_pkl)
-    #device = torch.device('cuda')
-    if(cpu):
+    if cpu:
         device = torch.device('cpu')
     else:
-        device = torch.device('cuda')
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        if not torch.cuda.is_available():
+            print('Warning: CUDA not available, falling back to CPU.')
     with dnnlib.util.open_url(network_pkl) as fp:
         G = legacy.load_network_pkl(fp)['G_ema'].requires_grad_(False).to(device) # type: ignore
 

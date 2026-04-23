@@ -56,8 +56,8 @@ def circularloop(nf, d, seed, seeds):
         latents_a = rnd.randn(1, 512)
         latents_b = rnd.randn(1, 512)
         latents_c = rnd.randn(1, 512)
-    elif(len(seeds) is not 3):
-        assert('Must choose exactly 3 seeds!')
+    elif(len(seeds) != 3):
+        raise AssertionError('Must choose exactly 3 seeds!')
     else:
         latents_a = np.random.RandomState(int(seeds[0])).randn(1, 512)
         latents_b = np.random.RandomState(int(seeds[1])).randn(1, 512)
@@ -249,7 +249,6 @@ def slerp(t, v0, v1, DOT_THRESHOLD=0.9995):
     s1 = sin_theta_t / sin_theta_0
     v2 = s0 * v0_copy + s1 * v1_copy
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Tensor is on: {tensor.device}")
     return torch.from_numpy(v2).to(device)
 
 def slerp_interpolate(zs, steps):
@@ -406,11 +405,12 @@ def generate_images(
     # lmask = torch.from_numpy(lmask).to(device)
 
     print('Loading networks from "%s"...' % network_pkl)
-    #device = torch.device('cuda')
-    if(cpu):
-    	device = torch.device('cpu')
+    if cpu:
+        device = torch.device('cpu')
     else:
-    	device = torch.device('cuda')
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        if not torch.cuda.is_available():
+            print('Warning: CUDA not available, falling back to CPU.')
     with dnnlib.util.open_url(network_pkl) as f:
         # G = legacy.load_network_pkl(f)['G_ema'].to(device) # type: ignore
         G = legacy.load_network_pkl(f, custom=custom, **G_kwargs)['G_ema'].to(device) # type: ignore

@@ -70,8 +70,8 @@ def generate_from_generator_adaptive(psi: float, radius_large: float, radius_sma
       latents_b = rnd.randn(1, G.z_dim)
       latents_c = rnd.randn(1, G.z_dim)
     else:
-      if(len(seeds) is not 3):
-        print('you must set 3 seed values!')
+      if(len(seeds) != 3):
+        raise AssertionError('you must set 3 seed values!')
 
       print(seeds)
       latents_a = np.random.RandomState(int(seeds[0])).randn(1, G.z_dim)
@@ -140,7 +140,9 @@ def main(pkl: str, psi: float, radius_large: float, radius_small:float, step1: f
     G_kwargs.scale_type = scale_type
     
     print('Loading networks from "%s"...' % pkl)
-    device = torch.device('cuda')
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if not torch.cuda.is_available():
+        print('Warning: CUDA not available, falling back to CPU.')
     with dnnlib.util.open_url(pkl) as f:
         G = legacy.load_network_pkl(f, custom=custom, **G_kwargs)['G_ema'].to(device) # type: ignore
 
