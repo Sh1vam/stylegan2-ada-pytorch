@@ -1,0 +1,76 @@
+# ============================================================
+# StyleGAN2-ADA-PyTorch — Requirements
+# CPU-compatible fork (GPU used automatically when available)
+# Python >= 3.8
+# ============================================================
+
+# -----------------------------------------------------------
+# Core — needed for training, generation, and projection
+# -----------------------------------------------------------
+
+# PyTorch — install the build that matches your hardware:
+#
+#   GPU (CUDA 12.1):
+#     pip install torch==2.4.1 torchvision==2.4.4 --index-url https://download.pytorch.org/whl/cu121
+#
+#   GPU (CUDA 11.8):
+#     pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cu118
+#
+#   CPU only (slower, but fully supported):
+#     pip install torch==2.4.1 torchvision==0.19.1 --index-url https://download.pytorch.org/whl/cpu
+#
+# Then install the rest of this file normally:
+#     pip install -r requirements.txt
+
+torch>=1.8.0          # 2.x recommended; 1.8+ minimum for ADA ops
+torchvision>=0.9.0    # used in apply_factor.py (torchvision.utils)
+
+numpy>=1.21.0
+scipy>=1.7.0          # signal processing in augment.py; interpolation in util
+Pillow>=8.0.0         # PIL.Image throughout
+click>=7.0            # CLI interface for all entry-point scripts
+psutil>=5.8.0         # CPU/RAM stats in training_loop.py
+requests>=2.25.0      # URL downloading in dnnlib/util.py
+imageio>=2.9.0        # image I/O in projector and pbaylies_projector
+opensimplex>=0.4      # noise loops in generate.py
+
+# -----------------------------------------------------------
+# Training-only extras
+# -----------------------------------------------------------
+
+# torch.utils.tensorboard (optional — skipped gracefully if missing)
+# tensorboard>=2.4.0
+
+# -----------------------------------------------------------
+# Video output (flesh_digression.py, generate.py interpolation)
+# -----------------------------------------------------------
+moviepy>=1.0.3        # video export in flesh_digression.py
+# ffmpeg must also be installed at the OS level:
+#   Ubuntu/Debian:  sudo apt install ffmpeg
+#   macOS:          brew install ffmpeg
+#   Windows:        https://ffmpeg.org/download.html
+
+# -----------------------------------------------------------
+# Progress bars  (pbaylies_projector.py)
+# -----------------------------------------------------------
+tqdm>=4.60.0
+
+# -----------------------------------------------------------
+# Optional — pbaylies_projector.py only
+# Uncomment if you intend to use CLIP-guided projection
+# -----------------------------------------------------------
+# clip @ git+https://github.com/openai/CLIP.git
+# kmeans-pytorch>=0.3   # pip install kmeans-pytorch
+
+# -----------------------------------------------------------
+# Notes on CUDA custom ops
+# -----------------------------------------------------------
+# The custom CUDA kernels (bias_act, upfirdn2d) are compiled
+# at runtime via torch.utils.cpp_extension when a GPU is
+# present and an NVCC toolchain is available. On CPU they fall
+# back automatically to pure-PyTorch reference implementations
+# — no compilation step required.
+#
+# To compile them manually (optional, GPU only):
+#   sudo apt install nvidia-cuda-toolkit   # Ubuntu
+#   python -c "from torch_utils.ops import bias_act"
