@@ -31,7 +31,7 @@ class UserError(Exception):
 
 def setup_training_loop_kwargs(
     # General options (not included in desc).
-    gpus       = None, # Number of GPUs: <int>, default = 1 gpu
+    gpus       = None, # Number of GPUs: <int>, 0 = CPU, default = 1 gpu
     snap       = None, # Snapshot interval: <int>, default = 50 ticks
     metrics    = None, # List of metric names: [], ['fid50k_full'] (default), ...
     seed       = None, # Random seed: <int>, default = 0
@@ -79,9 +79,19 @@ def setup_training_loop_kwargs(
     if gpus is None:
         gpus = 1
     assert isinstance(gpus, int)
-    if not (gpus >= 1 and gpus & (gpus - 1) == 0):
-        raise UserError('--gpus must be a power of two')
-    args.num_gpus = gpus
+
+    # ── CPU mode: gpus=0 means "run on CPU" ──────────────────────────────────
+    cpu_mode = (gpus == 0)
+    if cpu_mode:
+        # Treat as single-process; no CUDA required
+        args.num_gpus = 1
+    else:
+        if not (gpus >= 1 and gpus & (gpus - 1) == 0):
+            raise UserError('--gpus must be a power of two (or 0 for CPU)')
+        args.num_gpus = gpus
+    # ─────────────────────────────────────────────────────────────────────────
+
+    args.cpu_mode = cpu_mode  # propagate so training_loop can honour it
 
     if snap is None:
         snap = 50
@@ -111,7 +121,6 @@ def setup_training_loop_kwargs(
     assert isinstance(data, str)
     args.training_set_kwargs = dnnlib.EasyDict(class_name='training.dataset.ImageFolderDataset', path=data, use_labels=True, max_size=None, xflip=False)
     args.data_loader_kwargs = dnnlib.EasyDict(pin_memory=False, num_workers=1, prefetch_factor=2)
-    #args.data_loader_kwargs = dnnlib.EasyDict(pin_memory=True, num_workers=3, prefetch_factor=2)
     try:
         training_set = dnnlib.util.construct_class_by_name(**args.training_set_kwargs) # subclass of training.dataset.Dataset
         args.training_set_kwargs.resolution = training_set.resolution # be explicit about resolution
@@ -166,15 +175,15 @@ def setup_training_loop_kwargs(
 
     cfg_specs = {
         'auto':          dict(ref_gpus=-1, kimg=25000,  mb=-1, mbstd=-1, fmaps=-1,  lrate=-1,     gamma=-1,   ema=-1,  ramp=0.05, map=2), # populated dynamically based on 'gpus' and 'res'
-        'aydao':     dict(ref_gpus=2,  kimg=25000,  mb=16, mbstd=8,  fmaps=1,   lrate=0.002,  gamma=10,   ema=10,  ramp=None, map=8), # uses mixed-precision, 11GB GPU
-        '11gb-gpu':     dict(ref_gpus=1,  kimg=25000,  mb=4, mbstd=4,  fmaps=1,   lrate=0.002,  gamma=10,   ema=10,  ramp=None, map=8), # uses mixed-precision, 11GB GPU
-        '11gb-gpu-complex':     dict(ref_gpus=1,  kimg=25000,  mb=4, mbstd=4,  fmaps=1,   lrate=0.002,  gamma=10,   ema=10,  ramp=None, map=8), # uses mixed-precision, 11GB GPU
-        '24gb-gpu':     dict(ref_gpus=1,  kimg=25000,  mb=8, mbstd=8,  fmaps=1,   lrate=0.002,  gamma=10,   ema=10,  ramp=None, map=8), # uses mixed-precision, 24GB GPU
-        '24gb-gpu-complex':     dict(ref_gpus=1,  kimg=25000,  mb=8, mbstd=8,  fmaps=1,   lrate=0.002,  gamma=10,   ema=10,  ramp=None, map=8), # uses mixed-precision, 24GB GPU
-        '24gb-2gpu-complex':     dict(ref_gpus=2,  kimg=25000,  mb=16, mbstd=8,  fmaps=1,   lrate=0.002,  gamma=10,   ema=10,  ramp=None, map=8), # uses mixed-precision, 24GB GPU
-        '48gb-gpu':     dict(ref_gpus=1,  kimg=25000,  mb=16, mbstd=16,  fmaps=1,   lrate=0.002,  gamma=10,   ema=10,  ramp=None, map=8), # uses mixed-precision, 48GB GPU
-        '48gb-2gpu':     dict(ref_gpus=2,  kimg=25000,  mb=32, mbstd=16,  fmaps=1,   lrate=0.002,  gamma=10,   ema=10,  ramp=None, map=8), # uses mixed-precision, 48GB GPU
-        'stylegan2':     dict(ref_gpus=8,  kimg=25000,  mb=32, mbstd=4,  fmaps=1,   lrate=0.002,  gamma=10,   ema=10,  ramp=None, map=8), # uses mixed-precision, unlike original StyleGAN2
+        'aydao':         dict(ref_gpus=2,  kimg=25000,  mb=16, mbstd=8,  fmaps=1,   lrate=0.002,  gamma=10,   ema=10,  ramp=None, map=8),
+        '11gb-gpu':      dict(ref_gpus=1,  kimg=25000,  mb=4,  mbstd=4,  fmaps=1,   lrate=0.002,  gamma=10,   ema=10,  ramp=None, map=8),
+        '11gb-gpu-complex': dict(ref_gpus=1, kimg=25000, mb=4, mbstd=4,  fmaps=1,   lrate=0.002,  gamma=10,   ema=10,  ramp=None, map=8),
+        '24gb-gpu':      dict(ref_gpus=1,  kimg=25000,  mb=8,  mbstd=8,  fmaps=1,   lrate=0.002,  gamma=10,   ema=10,  ramp=None, map=8),
+        '24gb-gpu-complex': dict(ref_gpus=1, kimg=25000, mb=8, mbstd=8,  fmaps=1,   lrate=0.002,  gamma=10,   ema=10,  ramp=None, map=8),
+        '24gb-2gpu-complex': dict(ref_gpus=2, kimg=25000, mb=16, mbstd=8, fmaps=1,  lrate=0.002,  gamma=10,   ema=10,  ramp=None, map=8),
+        '48gb-gpu':      dict(ref_gpus=1,  kimg=25000,  mb=16, mbstd=16, fmaps=1,   lrate=0.002,  gamma=10,   ema=10,  ramp=None, map=8),
+        '48gb-2gpu':     dict(ref_gpus=2,  kimg=25000,  mb=32, mbstd=16, fmaps=1,   lrate=0.002,  gamma=10,   ema=10,  ramp=None, map=8),
+        'stylegan2':     dict(ref_gpus=8,  kimg=25000,  mb=32, mbstd=4,  fmaps=1,   lrate=0.002,  gamma=10,   ema=10,  ramp=None, map=8),
         'paper256':      dict(ref_gpus=8,  kimg=25000,  mb=64, mbstd=8,  fmaps=0.5, lrate=0.0025, gamma=1,    ema=20,  ramp=None, map=8),
         'paper512':      dict(ref_gpus=8,  kimg=25000,  mb=64, mbstd=8,  fmaps=1,   lrate=0.0025, gamma=0.5,  ema=20,  ramp=None, map=8),
         'paper1024':     dict(ref_gpus=8,  kimg=25000,  mb=32, mbstd=4,  fmaps=1,   lrate=0.002,  gamma=2,    ema=10,  ramp=None, map=8),
@@ -185,14 +194,16 @@ def setup_training_loop_kwargs(
     assert cfg in cfg_specs
     spec = dnnlib.EasyDict(cfg_specs[cfg])
     if cfg == 'auto':
-        desc += f'{gpus:d}'
-        spec.ref_gpus = gpus
+        # In CPU mode treat as 1 logical GPU for spec calculations
+        logical_gpus = 1 if cpu_mode else gpus
+        desc += f'{logical_gpus:d}'
+        spec.ref_gpus = logical_gpus
         res = args.training_set_kwargs.resolution
-        spec.mb = max(min(gpus * min(4096 // res, 32), 64), gpus) # keep gpu memory consumption at bay
-        spec.mbstd = min(spec.mb // gpus, 4) # other hyperparams behave more predictably if mbstd group size remains fixed
+        spec.mb = max(min(logical_gpus * min(4096 // res, 32), 64), logical_gpus)
+        spec.mbstd = min(spec.mb // logical_gpus, 4)
         spec.fmaps = 1 if res >= 512 else 0.5
         spec.lrate = 0.002 if res >= 1024 else 0.0025
-        spec.gamma = 0.0002 * (res ** 2) / spec.mb # heuristic formula
+        spec.gamma = 0.0002 * (res ** 2) / spec.mb
         spec.ema = spec.mb * 10 / 32
 
     if lrate is not None:
@@ -204,8 +215,17 @@ def setup_training_loop_kwargs(
     args.G_kwargs.synthesis_kwargs.channel_base = args.D_kwargs.channel_base = int(spec.fmaps * 32768)
     args.G_kwargs.synthesis_kwargs.channel_max = args.D_kwargs.channel_max = 512
     args.G_kwargs.mapping_kwargs.num_layers = spec.map
-    args.G_kwargs.synthesis_kwargs.num_fp16_res = args.D_kwargs.num_fp16_res = 4 # enable mixed-precision training
-    args.G_kwargs.synthesis_kwargs.conv_clamp = args.D_kwargs.conv_clamp = 256 # clamp activations to avoid float16 overflow
+
+    # ── fp16 / mixed-precision: disabled on CPU ───────────────────────────────
+    if cpu_mode:
+        # CPU does not support float16 convolutions
+        args.G_kwargs.synthesis_kwargs.num_fp16_res = args.D_kwargs.num_fp16_res = 0
+        args.G_kwargs.synthesis_kwargs.conv_clamp    = args.D_kwargs.conv_clamp    = None
+    else:
+        args.G_kwargs.synthesis_kwargs.num_fp16_res = args.D_kwargs.num_fp16_res = 4
+        args.G_kwargs.synthesis_kwargs.conv_clamp    = args.D_kwargs.conv_clamp    = 256
+    # ─────────────────────────────────────────────────────────────────────────
+
     args.D_kwargs.epilogue_kwargs.mbstd_group_size = spec.mbstd
 
     args.G_opt_kwargs = dnnlib.EasyDict(class_name='torch.optim.Adam', lr=spec.lrate, betas=[0,0.99], eps=1e-8)
@@ -214,14 +234,15 @@ def setup_training_loop_kwargs(
 
     args.total_kimg = spec.kimg
     args.batch_size = spec.mb
+    # batch_gpu: how many samples each device processes; on CPU there is only 1 "device"
     args.batch_gpu = spec.mb // spec.ref_gpus
     args.ema_kimg = spec.ema
     args.ema_rampup = spec.ramp
 
     if cfg == 'cifar':
-        args.loss_kwargs.pl_weight = 0 # disable path length regularization
-        args.loss_kwargs.style_mixing_prob = 0 # disable style mixing
-        args.D_kwargs.architecture = 'orig' # disable residual skip connections
+        args.loss_kwargs.pl_weight = 0
+        args.loss_kwargs.style_mixing_prob = 0
+        args.D_kwargs.architecture = 'orig'
 
     if gamma is not None:
         assert isinstance(gamma, float)
@@ -243,11 +264,13 @@ def setup_training_loop_kwargs(
 
     if batch is not None:
         assert isinstance(batch, int)
-        if not (batch >= 1 and batch % gpus == 0):
+        # In CPU mode gpus=0, so divisibility check uses 1
+        effective_gpus = 1 if cpu_mode else gpus
+        if not (batch >= 1 and batch % effective_gpus == 0):
             raise UserError('--batch must be at least 1 and divisible by --gpus')
         desc += f'-batch{batch}'
         args.batch_size = batch
-        args.batch_gpu = batch // gpus
+        args.batch_gpu = batch // effective_gpus
 
     if topk is not None:
         assert isinstance(topk, float)
@@ -267,14 +290,11 @@ def setup_training_loop_kwargs(
 
     if aug == 'ada':
         args.ada_target = 0.6
-
     elif aug == 'noaug':
         pass
-
     elif aug == 'fixed':
         if p is None:
             raise UserError(f'--aug={aug} requires specifying --p')
-
     else:
         raise UserError(f'--aug={aug} not supported')
 
@@ -345,14 +365,14 @@ def setup_training_loop_kwargs(
         desc += '-noresume'
     elif resume in resume_specs:
         desc += f'-resume{resume}'
-        args.resume_pkl = resume_specs[resume] # predefined url
+        args.resume_pkl = resume_specs[resume]
     else:
         desc += '-resumecustom'
-        args.resume_pkl = resume # custom path or url
+        args.resume_pkl = resume
 
     if resume != 'noresume':
-        args.ada_kimg = 100 # make ADA react faster at the beginning
-        args.ema_rampup = None # disable EMA rampup
+        args.ada_kimg = 100
+        args.ema_rampup = None
 
     if freezed is not None:
         assert isinstance(freezed, int)
@@ -368,15 +388,20 @@ def setup_training_loop_kwargs(
     if fp32 is None:
         fp32 = False
     assert isinstance(fp32, bool)
-    if fp32:
+    # ── Force fp32 on CPU (fp16 is unsupported) ───────────────────────────────
+    if fp32 or cpu_mode:
         args.G_kwargs.synthesis_kwargs.num_fp16_res = args.D_kwargs.num_fp16_res = 0
-        args.G_kwargs.synthesis_kwargs.conv_clamp = args.D_kwargs.conv_clamp = None
+        args.G_kwargs.synthesis_kwargs.conv_clamp    = args.D_kwargs.conv_clamp    = None
+    # ─────────────────────────────────────────────────────────────────────────
 
     if nhwc is None:
         nhwc = False
     assert isinstance(nhwc, bool)
     if nhwc:
-        args.G_kwargs.synthesis_kwargs.fp16_channels_last = args.D_kwargs.block_kwargs.fp16_channels_last = True
+        if cpu_mode:
+            print('Warning: --nhwc has no effect in CPU mode; ignoring.')
+        else:
+            args.G_kwargs.synthesis_kwargs.fp16_channels_last = args.D_kwargs.block_kwargs.fp16_channels_last = True
 
     if nobench is None:
         nobench = False
@@ -392,11 +417,11 @@ def setup_training_loop_kwargs(
 
     if workers is not None:
         assert isinstance(workers, int)
-        if not workers < 0:
-                raise UserError('--workers must be at least 0') 
+        if not workers >= 0:
+            raise UserError('--workers must be at least 0')
         args.data_loader_kwargs.num_workers = workers
         if workers == 0:
-            args.data_loader_kwargs.prefetch_factor = None  # ← add this
+            args.data_loader_kwargs.prefetch_factor = None
 
     return desc, args
 
@@ -405,8 +430,8 @@ def setup_training_loop_kwargs(
 def subprocess_fn(rank, args, temp_dir):
     dnnlib.util.Logger(file_name=os.path.join(args.run_dir, 'log.txt'), file_mode='a', should_flush=True)
 
-    # Init torch.distributed.
-    if args.num_gpus > 1:
+    # ── Skip torch.distributed entirely in CPU mode ───────────────────────────
+    if not args.get('cpu_mode', False) and args.num_gpus > 1:
         init_file = os.path.abspath(os.path.join(temp_dir, '.torch_distributed_init'))
         if os.name == 'nt':
             init_method = 'file:///' + init_file.replace('\\', '/')
@@ -414,14 +439,19 @@ def subprocess_fn(rank, args, temp_dir):
         else:
             init_method = f'file://{init_file}'
             torch.distributed.init_process_group(backend='nccl', init_method=init_method, rank=rank, world_size=args.num_gpus)
+    # ─────────────────────────────────────────────────────────────────────────
 
-    # Init torch_utils.
-    sync_device = torch.device('cuda', rank) if args.num_gpus > 1 else None
+    # ── sync_device is None on CPU or single-GPU ─────────────────────────────
+    if args.get('cpu_mode', False):
+        sync_device = None
+    else:
+        sync_device = torch.device('cuda', rank) if args.num_gpus > 1 else None
+    # ─────────────────────────────────────────────────────────────────────────
+
     training_stats.init_multiprocessing(rank=rank, sync_device=sync_device)
     if rank != 0:
         custom_ops.verbosity = 'none'
 
-    # Execute training loop.
     training_loop.training_loop(rank=rank, **args)
 
 #----------------------------------------------------------------------------
@@ -441,52 +471,56 @@ class CommaSeparatedList(click.ParamType):
 @click.pass_context
 
 # General options.
-@click.option('--outdir', help='Where to save the results', required=True, metavar='DIR')
-@click.option('--gpus', help='Number of GPUs to use [default: 1]', type=int, metavar='INT')
-@click.option('--snap', help='Snapshot interval [default: 50 ticks]', type=int, metavar='INT')
-@click.option('--metrics', help='Comma-separated list or "none" [default: fid50k_full]', type=CommaSeparatedList())
-@click.option('--seed', help='Random seed [default: 0]', type=int, metavar='INT')
+@click.option('--outdir',   help='Where to save the results', required=True, metavar='DIR')
+@click.option('--gpus',     help='Number of GPUs to use [default: 1]; use 0 for CPU', type=int, metavar='INT')
+@click.option('--snap',     help='Snapshot interval [default: 50 ticks]', type=int, metavar='INT')
+@click.option('--metrics',  help='Comma-separated list or "none" [default: fid50k_full]', type=CommaSeparatedList())
+@click.option('--seed',     help='Random seed [default: 0]', type=int, metavar='INT')
 @click.option('-n', '--dry-run', help='Print training options and exit', is_flag=True)
 
 # Dataset.
-@click.option('--data', help='Training data (directory or zip)', metavar='PATH', required=True)
-@click.option('--cond', help='Train conditional model based on dataset labels [default: false]', type=bool, metavar='BOOL')
-@click.option('--subset', help='Train with only N images [default: all]', type=int, metavar='INT')
-@click.option('--mirror', help='Enable dataset x-flips [default: false]', type=bool, metavar='BOOL')
+@click.option('--data',    help='Training data (directory or zip)', metavar='PATH', required=True)
+@click.option('--cond',    help='Train conditional model based on dataset labels [default: false]', type=bool, metavar='BOOL')
+@click.option('--subset',  help='Train with only N images [default: all]', type=int, metavar='INT')
+@click.option('--mirror',  help='Enable dataset x-flips [default: false]', type=bool, metavar='BOOL')
 @click.option('--mirrory', help='Augment dataset with y-flips (default: false)', type=bool, metavar='BOOL')
 
 # Base config.
-@click.option('--cfg', help='Base config [default: auto]', type=click.Choice(['auto', '11gb-gpu','11gb-gpu-complex', '24gb-gpu','24gb-gpu-complex', '48gb-gpu','48gb-2gpu', 'stylegan2', 'paper256', 'paper512', 'paper1024', 'cifar', 'cifarbaseline', 'aydao']))
-@click.option('--lrate', help='Override learning rate', type=float, metavar='FLOAT')
-@click.option('--gamma', help='Override R1 gamma', type=float)
-@click.option('--kimg', help='Override training duration', type=int, metavar='INT')
+@click.option('--cfg',    help='Base config [default: auto]', type=click.Choice(['auto', '11gb-gpu', '11gb-gpu-complex', '24gb-gpu', '24gb-gpu-complex', '48gb-gpu', '48gb-2gpu', 'stylegan2', 'paper256', 'paper512', 'paper1024', 'cifar', 'cifarbaseline', 'aydao']))
+@click.option('--lrate',  help='Override learning rate', type=float, metavar='FLOAT')
+@click.option('--gamma',  help='Override R1 gamma', type=float)
+@click.option('--kimg',   help='Override training duration', type=int, metavar='INT')
 @click.option('--nkimg',  help='Override starting count', type=int, metavar='INT')
-@click.option('--batch', help='Override batch size', type=int, metavar='INT')
-@click.option('--topk', help='Enable topk training [default: None]', type=float, metavar='FLOAT')
+@click.option('--batch',  help='Override batch size', type=int, metavar='INT')
+@click.option('--topk',   help='Enable topk training [default: None]', type=float, metavar='FLOAT')
 
 # Discriminator augmentation.
-@click.option('--aug', help='Augmentation mode [default: ada]', type=click.Choice(['noaug', 'ada', 'fixed']))
-@click.option('--p', help='Augmentation probability for --aug=fixed', type=float)
-@click.option('--target', help='ADA target value for --aug=ada', type=float)
-@click.option('--augpipe', help='Augmentation pipeline [default: bgc]', type=click.Choice(['blit', 'geom', 'color', 'filter', 'noise', 'cutout', 'bg', 'bgc', 'bgcf', 'bgcfn', 'bgcfnc']))
-@click.option('--initstrength', help='Override ADA strength at start', type=float)
+@click.option('--aug',         help='Augmentation mode [default: ada]', type=click.Choice(['noaug', 'ada', 'fixed']))
+@click.option('--p',           help='Augmentation probability for --aug=fixed', type=float)
+@click.option('--target',      help='ADA target value for --aug=ada', type=float)
+@click.option('--augpipe',     help='Augmentation pipeline [default: bgc]', type=click.Choice(['blit', 'geom', 'color', 'filter', 'noise', 'cutout', 'bg', 'bgc', 'bgcf', 'bgcfn', 'bgcfnc']))
+@click.option('--initstrength',help='Override ADA strength at start', type=float)
 
 # Transfer learning.
-@click.option('--resume', help='Resume training [default: noresume]', metavar='PKL')
+@click.option('--resume',  help='Resume training [default: noresume]', metavar='PKL')
 @click.option('--freezed', help='Freeze-D [default: 0 layers]', type=int, metavar='INT')
 
 # Performance options.
-@click.option('--fp32', help='Disable mixed-precision training', type=bool, metavar='BOOL')
-@click.option('--nhwc', help='Use NHWC memory format with FP16', type=bool, metavar='BOOL')
-@click.option('--nobench', help='Disable cuDNN benchmarking', type=bool, metavar='BOOL')
+@click.option('--fp32',       help='Disable mixed-precision training', type=bool, metavar='BOOL')
+@click.option('--nhwc',       help='Use NHWC memory format with FP16', type=bool, metavar='BOOL')
+@click.option('--nobench',    help='Disable cuDNN benchmarking', type=bool, metavar='BOOL')
 @click.option('--allow-tf32', help='Allow PyTorch to use TF32 internally', type=bool, metavar='BOOL')
-@click.option('--workers', help='Override number of DataLoader workers', type=int, metavar='INT')
+@click.option('--workers',    help='Override number of DataLoader workers', type=int, metavar='INT')
 
 def main(ctx, outdir, dry_run, **config_kwargs):
     """Train a GAN using the techniques described in the paper
     "Training Generative Adversarial Networks with Limited Data".
 
     Examples:
+
+    \b
+    # Train on CPU (no GPU required).
+    python train.py --outdir=~/training-runs --data=~/mydataset.zip --gpus=0
 
     \b
     # Train with custom dataset using 1 GPU.
@@ -552,7 +586,7 @@ def main(ctx, outdir, dry_run, **config_kwargs):
     print(f'Output directory:   {args.run_dir}')
     print(f'Training data:      {args.training_set_kwargs.path}')
     print(f'Training duration:  {args.total_kimg} kimg')
-    print(f'Number of GPUs:     {args.num_gpus}')
+    print(f'Device:             {"CPU" if args.get("cpu_mode") else f"{args.num_gpus} GPU(s)"}')
     print(f'Number of images:   {args.training_set_kwargs.max_size}')
     print(f'Image resolution:   {args.training_set_kwargs.resolution}')
     print(f'Conditional model:  {args.training_set_kwargs.use_labels}')
@@ -572,12 +606,15 @@ def main(ctx, outdir, dry_run, **config_kwargs):
 
     # Launch processes.
     print('Launching processes...')
-    torch.multiprocessing.set_start_method('spawn',force=True)
-    with tempfile.TemporaryDirectory() as temp_dir:
-        if args.num_gpus == 1:
-            subprocess_fn(rank=0, args=args, temp_dir=temp_dir)
-        else:
+
+    # ── CPU mode or single GPU: run directly in the main process ─────────────
+    if args.get('cpu_mode', False) or args.num_gpus == 1:
+        subprocess_fn(rank=0, args=args, temp_dir=None)
+    else:
+        torch.multiprocessing.set_start_method('spawn', force=True)
+        with tempfile.TemporaryDirectory() as temp_dir:
             torch.multiprocessing.spawn(fn=subprocess_fn, args=(args, temp_dir), nprocs=args.num_gpus)
+    # ─────────────────────────────────────────────────────────────────────────
 
 #----------------------------------------------------------------------------
 
