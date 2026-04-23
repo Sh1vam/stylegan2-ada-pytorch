@@ -248,7 +248,9 @@ def slerp(t, v0, v1, DOT_THRESHOLD=0.9995):
     s0 = np.sin(theta_0 - theta_t) / sin_theta_0
     s1 = sin_theta_t / sin_theta_0
     v2 = s0 * v0_copy + s1 * v1_copy
-    return torch.from_numpy(v2).to("cuda")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Tensor is on: {tensor.device}")
+    return torch.from_numpy(v2).to(device)
 
 def slerp_interpolate(zs, steps):
     out = []
@@ -317,6 +319,7 @@ def zs_to_ws(G,device,label,truncation_psi,zs):
 @click.option('--start', type=float, help='starting truncation value', default=0.0, show_default=True)
 @click.option('--stop', type=float, help='stopping truncation value', default=1.0, show_default=True)
 @click.option('--trunc', 'truncation_psi', type=float, help='Truncation psi', default=1, show_default=True)
+@click.option('--cpu', help='Whether to use CPU', type=bool, metavar='BOOL', default=False)
 
 def generate_images(
     ctx: click.Context,
@@ -340,6 +343,7 @@ def generate_images(
     projected_w: Optional[str],
     start: Optional[float],
     stop: Optional[float],
+    cpu: Optional[bool]
 ):
     """Generate images using pretrained network pickle.
 
@@ -402,7 +406,11 @@ def generate_images(
     # lmask = torch.from_numpy(lmask).to(device)
 
     print('Loading networks from "%s"...' % network_pkl)
-    device = torch.device('cuda')
+    #device = torch.device('cuda')
+    if(cpu):
+    	device = torch.device('cpu')
+    else:
+    	device = torch.device('cuda')
     with dnnlib.util.open_url(network_pkl) as f:
         # G = legacy.load_network_pkl(f)['G_ema'].to(device) # type: ignore
         G = legacy.load_network_pkl(f, custom=custom, **G_kwargs)['G_ema'].to(device) # type: ignore
