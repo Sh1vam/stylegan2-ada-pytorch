@@ -1,4 +1,4 @@
-﻿# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # NVIDIA CORPORATION and its licensors retain all intellectual property
 # and proprietary rights in and to this software, related documentation
@@ -26,7 +26,14 @@ class MetricOptions:
         self.dataset_kwargs = dnnlib.EasyDict(dataset_kwargs)
         self.num_gpus       = num_gpus
         self.rank           = rank
-        self.device         = device if device is not None else torch.device('cuda', rank)
+        # ── Use the passed device; fall back to CPU if CUDA is unavailable ────
+        if device is not None:
+            self.device = device
+        elif torch.cuda.is_available():
+            self.device = torch.device('cuda', rank)
+        else:
+            self.device = torch.device('cpu')
+        # ─────────────────────────────────────────────────────────────────────
         self.progress       = progress.sub() if progress is not None and rank == 0 else ProgressMonitor()
         self.cache          = cache
 
@@ -180,7 +187,10 @@ class ProgressMonitor:
 def compute_feature_stats_for_dataset(opts, detector_url, detector_kwargs, rel_lo=0, rel_hi=1, batch_size=64, data_loader_kwargs=None, max_items=None, **stats_kwargs):
     dataset = dnnlib.util.construct_class_by_name(**opts.dataset_kwargs)
     if data_loader_kwargs is None:
-        data_loader_kwargs = dict(pin_memory=True, num_workers=3, prefetch_factor=2)
+        # ── pin_memory is a GPU transfer optimisation; disable on CPU ─────────
+        pin = (opts.device.type != 'cpu')
+        data_loader_kwargs = dict(pin_memory=pin, num_workers=3, prefetch_factor=2)
+        # ─────────────────────────────────────────────────────────────────────
 
     # Try to lookup from cache.
     cache_file = None
@@ -262,7 +272,12 @@ def compute_feature_stats_for_generator(opts, detector_url, detector_kwargs, rel
         for _i in range(batch_size // batch_gen):
             z = torch.randn([batch_gen, G.z_dim], device=opts.device)
             c = [dataset.get_label(np.random.randint(len(dataset))) for _i in range(batch_gen)]
-            c = torch.from_numpy(np.stack(c)).pin_memory().to(opts.device)
+            # ── pin_memory is a GPU transfer optimisation; disable on CPU ─────
+            c = torch.from_numpy(np.stack(c))
+            if opts.device.type != 'cpu':
+                c = c.pin_memory()
+            c = c.to(opts.device)
+            # ─────────────────────────────────────────────────────────────────
             images.append(run_generator(z, c))
         images = torch.cat(images)
         if images.shape[1] == 1:
