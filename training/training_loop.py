@@ -1,4 +1,4 @@
-﻿# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2021, NVIDIA CORPORATION.  All rights reserved.
 #
 # NVIDIA CORPORATION and its licensors retain all intellectual property
 # and proprietary rights in and to this software, related documentation
@@ -88,8 +88,7 @@ def save_image_grid(img, fname, drange, grid_size):
 def training_loop(
     run_dir                 = '.',      # Output directory.
     training_set_kwargs     = {},       # Options for training set.
-    
-    data_loader_kwargs = {},       # Options for torch.utils.data.DataLoader.
+    data_loader_kwargs      = {},       # Options for torch.utils.data.DataLoader.
     G_kwargs                = {},       # Options for generator network.
     D_kwargs                = {},       # Options for discriminator network.
     G_opt_kwargs            = {},       # Options for generator optimizer.
@@ -110,7 +109,6 @@ def training_loop(
     ada_target              = None,     # ADA target value. None = fixed p.
     ada_interval            = 4,        # How often to perform ADA adjustment?
     ada_kimg                = 500,      # ADA adjustment speed, measured in how many kimg it takes for p to increase/decrease by one unit.
-    nimg                    = 0,        # current image count
     total_kimg              = 25000,    # Total length of the training, measured in thousands of real images.
     kimg_per_tick           = 4,        # Progress snapshot interval.
     image_snapshot_ticks    = 50,       # How often to save image snapshots? None = disable.
@@ -120,15 +118,21 @@ def training_loop(
     allow_tf32              = False,    # Enable torch.backends.cuda.matmul.allow_tf32 and torch.backends.cudnn.allow_tf32?
     abort_fn                = None,     # Callback function for determining whether to abort training. Must return consistent results across ranks.
     progress_fn             = None,     # Callback function for updating training progress. Called for all ranks.
+    cpu_mode                = False,    # Run on CPU instead of CUDA.
 ):
     # Initialize.
     start_time = time.time()
-    device = torch.device('cuda', rank)
+    # ── CPU mode: use 'cpu' device instead of 'cuda:<rank>' ──────────────────
+    device = torch.device('cpu') if cpu_mode else torch.device('cuda', rank)
+    # ─────────────────────────────────────────────────────────────────────────
     np.random.seed(random_seed * num_gpus + rank)
     torch.manual_seed(random_seed * num_gpus + rank)
     torch.backends.cudnn.benchmark = cudnn_benchmark    # Improves training speed.
-    torch.backends.cuda.matmul.allow_tf32 = allow_tf32  # Allow PyTorch to internally use tf32 for matmul
-    torch.backends.cudnn.allow_tf32 = allow_tf32        # Allow PyTorch to internally use tf32 for convolutions
+    # ── TF32 flags are CUDA-only; skip on CPU ────────────────────────────────
+    if not cpu_mode:
+        torch.backends.cuda.matmul.allow_tf32 = allow_tf32  # Allow PyTorch to internally use tf32 for matmul
+        torch.backends.cudnn.allow_tf32 = allow_tf32        # Allow PyTorch to internally use tf32 for convolutions
+    # ─────────────────────────────────────────────────────────────────────────
     conv2d_gradfix.enabled = True                       # Improves training speed.
     grid_sample_gradfix.enabled = True                  # Avoids errors with the augmentation pipe.
 
@@ -137,7 +141,7 @@ def training_loop(
         print('Loading training set...')
     training_set = dnnlib.util.construct_class_by_name(**training_set_kwargs) # subclass of training.dataset.Dataset
     training_set_sampler = misc.InfiniteSampler(dataset=training_set, rank=rank, num_replicas=num_gpus, seed=random_seed)
-    training_set_iterator = iter(torch.utils.data.DataLoader(dataset=training_set, sampler=training_set_sampler, batch_size=batch_size//num_gpus, persistent_workers=False, **data_loader_kwargs))
+    training_set_iterator = iter(torch.utils.data.DataLoader(dataset=training_set, sampler=training_set_sampler, batch_size=batch_size//num_gpus, **data_loader_kwargs))
     if rank == 0:
         print()
         print('Num images: ', len(training_set))
@@ -152,9 +156,6 @@ def training_loop(
     G = dnnlib.util.construct_class_by_name(**G_kwargs, **common_kwargs).train().requires_grad_(False).to(device) # subclass of torch.nn.Module
     D = dnnlib.util.construct_class_by_name(**D_kwargs, **common_kwargs).train().requires_grad_(False).to(device) # subclass of torch.nn.Module
     G_ema = copy.deepcopy(G).eval()
-
-    G.update_epochs( float(100 * nimg / (total_kimg * 1000)) ) # 100 total top k "epochs" in total_kimg
-    print('starting G epochs: ',G.epochs)
 
     # Resume from existing pickle.
     if (resume_pkl is not None) and (rank == 0):
@@ -186,7 +187,7 @@ def training_loop(
     if rank == 0:
         print(f'Distributing across {num_gpus} GPUs...')
     ddp_modules = dict()
-    for name, module in [('G', G),('G_mapping', G.mapping), ('G_synthesis', G.synthesis), ('D', D), (None, G_ema), ('augment_pipe', augment_pipe)]:
+    for name, module in [('G_mapping', G.mapping), ('G_synthesis', G.synthesis), ('D', D), (None, G_ema), ('augment_pipe', augment_pipe)]:
         if (num_gpus > 1) and (module is not None) and len(list(module.parameters())) != 0:
             module.requires_grad_(True)
             module = torch.nn.parallel.DistributedDataParallel(module, device_ids=[device], broadcast_buffers=False)
@@ -214,9 +215,11 @@ def training_loop(
     for phase in phases:
         phase.start_event = None
         phase.end_event = None
-        if rank == 0:
+        # ── CUDA Events are not available on CPU; skip ────────────────────────
+        if rank == 0 and not cpu_mode:
             phase.start_event = torch.cuda.Event(enable_timing=True)
             phase.end_event = torch.cuda.Event(enable_timing=True)
+        # ─────────────────────────────────────────────────────────────────────
 
     # Export sample images.
     grid_size = None
@@ -225,11 +228,11 @@ def training_loop(
     if rank == 0:
         print('Exporting sample images...')
         grid_size, images, labels = setup_snapshot_image_grid(training_set=training_set)
-        save_image_grid(images, os.path.join(run_dir, 'reals.jpg'), drange=[0,255], grid_size=grid_size)
+        save_image_grid(images, os.path.join(run_dir, 'reals.png'), drange=[0,255], grid_size=grid_size)
         grid_z = torch.randn([labels.shape[0], G.z_dim], device=device).split(batch_gpu)
         grid_c = torch.from_numpy(labels).to(device).split(batch_gpu)
         images = torch.cat([G_ema(z=z, c=c, noise_mode='const').cpu() for z, c in zip(grid_z, grid_c)]).numpy()
-        save_image_grid(images, os.path.join(run_dir, 'fakes_init.jpg'), drange=[-1,1], grid_size=grid_size)
+        save_image_grid(images, os.path.join(run_dir, 'fakes_init.png'), drange=[-1,1], grid_size=grid_size)
 
     # Initialize logs.
     if rank == 0:
@@ -250,7 +253,7 @@ def training_loop(
     if rank == 0:
         print(f'Training for {total_kimg} kimg...')
         print()
-    cur_nimg = nimg
+    cur_nimg = 0
     cur_tick = 0
     tick_start_nimg = cur_nimg
     tick_start_time = time.time()
@@ -268,16 +271,18 @@ def training_loop(
             all_gen_z = torch.randn([len(phases) * batch_size, G.z_dim], device=device)
             all_gen_z = [phase_gen_z.split(batch_gpu) for phase_gen_z in all_gen_z.split(batch_size)]
             all_gen_c = [training_set.get_label(np.random.randint(len(training_set))) for _ in range(len(phases) * batch_size)]
-            #all_gen_c = torch.from_numpy(np.stack(all_gen_c)).pin_memory().to(device)
-            all_gen_c = torch.from_numpy(np.stack(all_gen_c)).to(device)
+            # ── pin_memory() is only beneficial for GPU transfers; skip on CPU ─
+            all_gen_c = torch.from_numpy(np.stack(all_gen_c))
+            if not cpu_mode:
+                all_gen_c = all_gen_c.pin_memory()
+            all_gen_c = all_gen_c.to(device)
+            # ─────────────────────────────────────────────────────────────────
             all_gen_c = [phase_gen_c.split(batch_gpu) for phase_gen_c in all_gen_c.split(batch_size)]
 
         # Execute training phases.
         for phase, phase_gen_z, phase_gen_c in zip(phases, all_gen_z, all_gen_c):
             if batch_idx % phase.interval != 0:
                 continue
-
-            G.update_epochs( float(100 * nimg / (total_kimg * 1000)) ) # 100 total top k "epochs" in total_kimg
 
             # Initialize gradient accumulation.
             if phase.start_event is not None:
@@ -337,8 +342,11 @@ def training_loop(
         fields += [f"sec/kimg {training_stats.report0('Timing/sec_per_kimg', (tick_end_time - tick_start_time) / (cur_nimg - tick_start_nimg) * 1e3):<7.2f}"]
         fields += [f"maintenance {training_stats.report0('Timing/maintenance_sec', maintenance_time):<6.1f}"]
         fields += [f"cpumem {training_stats.report0('Resources/cpu_mem_gb', psutil.Process(os.getpid()).memory_info().rss / 2**30):<6.2f}"]
-        fields += [f"gpumem {training_stats.report0('Resources/peak_gpu_mem_gb', torch.cuda.max_memory_allocated(device) / 2**30):<6.2f}"]
-        torch.cuda.reset_peak_memory_stats()
+        # ── GPU memory stats are only available with CUDA ─────────────────────
+        if not cpu_mode:
+            fields += [f"gpumem {training_stats.report0('Resources/peak_gpu_mem_gb', torch.cuda.max_memory_allocated(device) / 2**30):<6.2f}"]
+            torch.cuda.reset_peak_memory_stats()
+        # ─────────────────────────────────────────────────────────────────────
         fields += [f"augment {training_stats.report0('Progress/augment', float(augment_pipe.p.cpu()) if augment_pipe is not None else 0):.3f}"]
         training_stats.report0('Timing/total_hours', (tick_end_time - start_time) / (60 * 60))
         training_stats.report0('Timing/total_days', (tick_end_time - start_time) / (24 * 60 * 60))
@@ -355,7 +363,7 @@ def training_loop(
         # Save image snapshot.
         if (rank == 0) and (image_snapshot_ticks is not None) and (done or cur_tick % image_snapshot_ticks == 0):
             images = torch.cat([G_ema(z=z, c=c, noise_mode='const').cpu() for z, c in zip(grid_z, grid_c)]).numpy()
-            save_image_grid(images, os.path.join(run_dir, f'fakes{cur_nimg//1000:06d}.jpg'), drange=[-1,1], grid_size=grid_size)
+            save_image_grid(images, os.path.join(run_dir, f'fakes{cur_nimg//1000:06d}.png'), drange=[-1,1], grid_size=grid_size)
 
         # Save network snapshot.
         snapshot_pkl = None
@@ -365,11 +373,7 @@ def training_loop(
             for name, module in [('G', G), ('D', D), ('G_ema', G_ema), ('augment_pipe', augment_pipe)]:
                 if module is not None:
                     if num_gpus > 1:
-                        try:
-                            misc.check_ddp_consistency(module, ignore_regex=r'.*\.w_avg')
-                        except Exception as e:
-                            print(str(e))
-                            pass
+                        misc.check_ddp_consistency(module, ignore_regex=r'.*\.w_avg')
                     module = copy.deepcopy(module).eval().requires_grad_(False).cpu()
                 snapshot_data[name] = module
                 del module # conserve memory
