@@ -139,13 +139,15 @@ def project(
 @click.option('--seed',                   help='Random seed', type=int, default=303, show_default=True)
 @click.option('--save-video',             help='Save an mp4 video of optimization progress', type=bool, default=True, show_default=True)
 @click.option('--outdir',                 help='Where to save the output images', required=True, metavar='DIR')
+@click.option('--cpu', help='Whether to use CPU', metavar='BOOL', default=False)
 def run_projection(
     network_pkl: str,
     target_fname: str,
     outdir: str,
     save_video: bool,
     seed: int,
-    num_steps: int
+    num_steps: int,
+    cpu: bool
 ):
     """Project given image to the latent space of pretrained network pickle.
 
@@ -160,7 +162,11 @@ def run_projection(
 
     # Load networks.
     print('Loading networks from "%s"...' % network_pkl)
-    device = torch.device('cuda')
+    #device = torch.device('cuda')
+    if(cpu):
+        device = torch.device('cpu')
+    else:
+        device = torch.device('cuda')
     with dnnlib.util.open_url(network_pkl) as fp:
         G = legacy.load_network_pkl(fp)['G_ema'].requires_grad_(False).to(device) # type: ignore
 
