@@ -415,7 +415,20 @@ We thank David Luebke for helpful comments; Tero Kuosmanen and Sabu Nadarajan fo
 
 
 ## Environment
-
+    !pip install torch==2.4.0 torchvision==0.19.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cu121
+    import torch
+    print(f"PyTorch Version: {torch.__version__}")
+    print(f"CUDA Available: {torch.cuda.is_available()}")
+    print(f"Device Count: {torch.cuda.device_count()}")
+    # Should output: 2.4.0+cu121, True, 2
+    !pip install ninja==1.10.2 click opensimplex imageio-ffmpeg==0.4.3 pyspng requests psutil
+    !apt-get update
+    !apt-get install gcc-9 g++-9 -y
+    !update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 60 --slave /usr/bin/g++ g++ /usr/bin/g++-9
+    !update-alternatives --set gcc /usr/bin/gcc-9
+    import os
+    os.environ['CC'] = 'gcc-9'
+    os.environ['CXX'] = 'g++-9'
 
 ```
     env = os.environ.copy()
@@ -424,11 +437,35 @@ We thank David Luebke for helpful comments; Tero Kuosmanen and Sabu Nadarajan fo
     env['PYTORCH_NO_CUDA_MEMORY_CACHING'] = '1'
     env['MKL_NUM_THREADS'] = '1'
     env['OMP_NUM_THREADS'] = '1'
-    env['CUDA_VISIBLE_DEVICES'] = '0'
+    env["CUDA_VISIBLE_DEVICES"] = "0,1"
     env['PYTHONFAULTHANDLER'] = '1'
+    env['TORCH_CUDA_ARCH_LIST'] = '7.5'          # ← T4 GPU = sm_75; fixes CUDA ops build
+    env['NVCC_FLAGS'] = '-gencode arch=compute_75,code=sm_75'
     ret = subprocess.run(cmd, env=env, 
                          stdout=subprocess.PIPE, 
                          stderr=subprocess.STDOUT, 
                          text=True, 
                          cwd='stylegan2-ada-pytorch')
 ```
+### For starter
+    cmd = [
+         sys.executable, 'train.py',
+        '--outdir', os.path.abspath(out_dir),
+        '--data',   os.path.abspath(dzip),
+        '--cfg',    'auto',
+        '--kimg',   str(kimg),
+        '--snap',   '10',
+        '--metrics','none',
+        '--gpus',   '2',
+        '--batch',  '16',
+        '--mirror', '1',
+        '--mirrory','1',       # Doubles data again (up-down flip)
+        '--aug',    'ada',     # Essential for <500 images
+        '--target', '0.7',     # More aggressive augmentation for tiny data
+        '--gamma',  '2',       # Higher regularization for stability
+        '--nobench','1',
+        '--fp32',   '1',       # Mandatory for Kaggle environment
+        #'--resume', '',
+        '--allow-tf32', '1',
+        '--workers', '1', 
+        ]
