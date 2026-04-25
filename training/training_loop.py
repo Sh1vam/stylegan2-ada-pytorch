@@ -376,7 +376,8 @@ def training_loop(
                 if module is not None:
                     if num_gpus > 1:
                         try:
-                            misc.check_ddp_consistency(module, ignore_regex=r'.*\\\\.(w_avg|noise_const)')#.*\.w_avg')
+                            pass
+                            #misc.check_ddp_consistency(module, ignore_regex=r'.*\.(w_avg|noise_const)')#.*\.w_avg') disabled for Kaggel GPU T4 x 2
                         except:
                             pass
                     module = copy.deepcopy(module).eval().requires_grad_(False).cpu()
