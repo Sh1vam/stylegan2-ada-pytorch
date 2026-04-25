@@ -438,7 +438,10 @@ def subprocess_fn(rank, args, temp_dir):
             torch.distributed.init_process_group(backend='gloo', init_method=init_method, rank=rank, world_size=args.num_gpus)
         else:
             init_method = f'file://{init_file}'
-            torch.distributed.init_process_group(backend='nccl', init_method=init_method, rank=rank, world_size=args.num_gpus)
+            try:
+                torch.distributed.init_process_group(backend='nccl', init_method=init_method, rank=rank, world_size=args.num_gpus)
+            except:
+                torch.distributed.init_process_group(backend='gloo', init_method=init_method, rank=rank, world_size=args.num_gpus)
     # ─────────────────────────────────────────────────────────────────────────
 
     # ── sync_device is None on CPU or single-GPU ─────────────────────────────
