@@ -375,7 +375,10 @@ def training_loop(
             for name, module in [('G', G), ('D', D), ('G_ema', G_ema), ('augment_pipe', augment_pipe)]:
                 if module is not None:
                     if num_gpus > 1:
-                        misc.check_ddp_consistency(module, ignore_regex=r'.*\\.(w_avg|noise_const)')#.*\.w_avg')
+                        try:
+                            misc.check_ddp_consistency(module, ignore_regex=r'.*\\\\.(w_avg|noise_const)')#.*\.w_avg')
+                        except:
+                            pass
                     module = copy.deepcopy(module).eval().requires_grad_(False).cpu()
                 snapshot_data[name] = module
                 del module # conserve memory
