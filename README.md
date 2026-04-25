@@ -447,7 +447,7 @@ We thank David Luebke for helpful comments; Tero Kuosmanen and Sabu Nadarajan fo
                          text=True, 
                          cwd='stylegan2-ada-pytorch')
 ```
-### For starter
+### Starter suitable for Kaggle GPU T4 X 2
     cmd = [
          sys.executable, 'train.py',
         '--outdir', os.path.abspath(out_dir),
